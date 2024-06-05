@@ -30,7 +30,9 @@
 #include <linux/sizes.h>
 #include <linux/android_kabi.h>
 #include <linux/android_vendor.h>
-
+//MSCHANGE begin
+#define KSWAPD_TUNE
+//MSCHANGE end
 struct mempolicy;
 struct anon_vma;
 struct anon_vma_chain;
@@ -131,6 +133,16 @@ extern int mmap_rnd_compat_bits __read_mostly;
 
 #ifndef lm_alias
 #define lm_alias(x)	__va(__pa_symbol(x))
+#endif
+
+/*
+ * With CONFIG_CFI_CLANG, the compiler replaces function addresses in
+ * instrumented C code with jump table addresses. Architectures that
+ * support CFI can define this macro to return the actual function address
+ * when needed.
+ */
+#ifndef function_nocfi
+#define function_nocfi(x) (x)
 #endif
 
 /*
@@ -2976,7 +2988,14 @@ extern int sysctl_memory_failure_recovery;
 extern void shake_page(struct page *p, int access);
 extern atomic_long_t num_poisoned_pages __read_mostly;
 extern int soft_offline_page(struct page *page, int flags);
-
+//MSCHANGE begin
+#ifdef KSWAPD_TUNE
+void lenny_set_accuracy(int accuracy); //lenny_fast 
+int lenny_get_accuracy(void); //lenny_fast
+void lenny_set_sum(int sum_ly); //lenny_fast 
+int lenny_get_sum(void); //lenny_fast
+#endif
+//MSCHANGE end
 
 /*
  * Error handlers for various types of pages.

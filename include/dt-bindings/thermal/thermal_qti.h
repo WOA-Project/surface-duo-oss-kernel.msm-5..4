@@ -84,6 +84,9 @@
 #define QMI_QFE_RET_PA1_FR1	69
 #define QMI_SDR0_PA		70
 #define QMI_SDR1_PA		71
+#define QMI_SYS_THERM_3	72
+#define QMI_SYS_THERM_4	73
+#define QMI_SYS_THERM_5	74
 
 #define QMI_MODEM_INST_ID	0x0
 #define QMI_ADSP_INST_ID	0x1

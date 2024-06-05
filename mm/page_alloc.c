@@ -15,6 +15,10 @@
  *          (lots of bits borrowed from Ingo Molnar & Andrew Morton)
  */
 
+//MSCHANGE begin
+#define KSWAPD_TUNE
+//MSCHANGE end 
+
 #include <linux/stddef.h>
 #include <linux/mm.h>
 #include <linux/highmem.h>
@@ -76,6 +80,38 @@
 #include <asm/div64.h>
 #include "internal.h"
 #include "shuffle.h"
+
+//MSCHANGE begin
+#ifdef KSWAPD_TUNE
+
+
+#define SLIDING1 5000 //sliding amount candidate
+#define SLIDING2 10000 //sliding amount candidate
+#define WINDOW 100000 //window size
+#define THRESHOLD1 80 //20% error
+#define THRESHOLD2 125 
+
+static struct {
+        long long timerly1; //lenny_fast is used to store the time init
+        int kfifo_sum; //lenny_fast calculate the sum of whole window
+        int lastsum; //lenny_fast store last sum
+        bool flagfirstdone; // to denote the first time
+        long long timerly2; // store the difference
+        long long countly; //lenny_fast count sliding
+        int accuracy_lenny1; //to store the average
+        int sum_ly1;//to store the sum
+} kswapd_perf = { 
+	.timerly1 = 0,
+	.kfifo_sum = 0,
+	.lastsum = 0,
+	.flagfirstdone = false,
+	.timerly2 = 0,
+	.countly = 0,
+	.accuracy_lenny1 = 0,
+	.sum_ly1 = 0};
+
+#endif 
+//MSCHANGE end
 
 /* prevent >1 _updater_ of zone percpu pageset ->high and ->batch fields */
 static DEFINE_MUTEX(pcp_batch_high_lock);
@@ -4912,6 +4948,31 @@ static inline void finalise_ac(gfp_t gfp_mask, struct alloc_context *ac)
 					ac->high_zoneidx, ac->nodemask);
 }
 
+//MSCHANGE begin
+#ifdef KSWAPD_TUNE
+void lenny_set_accuracy(int accuracy) //lenny_fast
+{ 
+	kswapd_perf.accuracy_lenny1 = accuracy;
+}
+
+int lenny_get_accuracy(void) //lenny_fast
+{ 
+	return kswapd_perf.accuracy_lenny1;
+}
+
+void lenny_set_sum(int sum_ly) //lenny_fast
+{
+	kswapd_perf.sum_ly1 = sum_ly;
+}
+
+int lenny_get_sum(void) //lenny_fast
+{ 
+	return kswapd_perf.sum_ly1;
+}
+
+#endif 
+//MSCHANGE end
+
 /*
  * This is the 'heart' of the zoned buddy allocator.
  */
@@ -4919,6 +4980,16 @@ struct page *
 __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 							nodemask_t *nodemask)
 {
+//MSCHANGE begin
+#ifdef KSWAPD_TUNE
+
+	int accuracyly = 0; //lenny_fast
+	u64 tvly; //lenny_fast time
+	unsigned long long timerly = 0; //lenny_fast current system time
+	int lenny_in = 1<<order; //lenny_fast is used to store the data in kfifo
+         
+#endif 
+//MSCHANGE end
 	struct page *page;
 	unsigned int alloc_flags = ALLOC_WMARK_LOW;
 	gfp_t alloc_mask; /* The gfp_t that was actually used for allocation */
@@ -4946,6 +5017,42 @@ __alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order, int preferred_nid,
 	 */
 	alloc_flags |= alloc_flags_nofragment(ac.preferred_zoneref->zone, gfp_mask);
 
+//MSCHANGE begin
+#ifdef KSWAPD_TUNE
+
+	if ( kswapd_perf.flagfirstdone == false ) {// for the first allocation
+		kswapd_perf.countly++; // the first slide is filled 
+		tvly = local_clock();
+		kswapd_perf.timerly1 = tvly >> 10;
+		kswapd_perf.flagfirstdone = true;
+		kswapd_perf.kfifo_sum = lenny_in;
+	}
+	else {// for the other allocation 
+		tvly = local_clock();
+		timerly = tvly >> 10;
+		kswapd_perf.timerly2 = timerly - kswapd_perf.timerly1;
+		if ( kswapd_perf.timerly2 >= SLIDING2 * kswapd_perf.countly ) {// sampling code add the first data in slide
+			kswapd_perf.countly = kswapd_perf.timerly2 / SLIDING2 + 1;
+			lenny_set_accuracy(order); 
+			if ( kswapd_perf.timerly2 > WINDOW ) {
+				if(kswapd_perf.kfifo_sum > 0){
+					accuracyly = kswapd_perf.lastsum * 100 / kswapd_perf.kfifo_sum; // it is a globle parameter will be used in reclaim operation
+					lenny_set_sum(accuracyly); // end if accuracy
+				}
+				kswapd_perf.lastsum = kswapd_perf.kfifo_sum;
+				kswapd_perf.kfifo_sum = lenny_in;
+				kswapd_perf.timerly1 += WINDOW * ( kswapd_perf.timerly2 / WINDOW );
+				kswapd_perf.countly = (timerly - kswapd_perf.timerly1) / SLIDING2 + 1;
+			}
+			else {
+				kswapd_perf.kfifo_sum += lenny_in; 
+			}
+		} //end if (timer2>=slidely*count )
+	} //end else       
+	
+         
+#endif 
+//MSCHANGE end
 	/* First allocation attempt */
 	page = get_page_from_freelist(alloc_mask, order, alloc_flags, &ac);
 	if (likely(page))

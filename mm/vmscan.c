@@ -13,6 +13,16 @@
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+//MSCHANGE begin
+#define KSWAPD_TUNE
+
+#ifdef KSWAPD_TUNE
+
+#define T1 100
+#define T2 200
+
+#endif 
+//MSCHANGE end
 
 #include <linux/mm.h>
 #include <linux/sched/mm.h>
@@ -3622,15 +3632,35 @@ static bool kswapd_shrink_node(pg_data_t *pgdat,
 {
 	struct zone *zone;
 	int z;
-
+//MSCHANGE begin
+#ifdef KSWAPD_TUNE
+	unsigned long lennymax, lennymin;
+	int lennyratio;
+#endif
+//MSCHANGE end
 	/* Reclaim a number of pages proportional to the number of zones */
 	sc->nr_to_reclaim = 0;
 	for (z = 0; z <= sc->reclaim_idx; z++) {
 		zone = pgdat->node_zones + z;
 		if (!managed_zone(zone))
 			continue;
+//MSCHANGE begin
+#ifdef KSWAPD_TUNE
+	lennymax=high_wmark_pages(zone); //lenny
+	lennymin=low_wmark_pages(zone);
+	lennyratio=lenny_get_sum();//lenny
+	/* Reclaim above the high watermark. */
+	
+	if( lennyratio > T1 )
+		lennymax = min( lennymax * lennyratio / 100, lennymax + (lennymax - lennymin) );//lenny
+	else if ( lennyratio > 0 )
+		lennymax = max( lennymax * lennyratio  / 100, lennymin );//lenny
 
-		sc->nr_to_reclaim += max(high_wmark_pages(zone), SWAP_CLUSTER_MAX);
+	sc->nr_to_reclaim += max(SWAP_CLUSTER_MAX, lennymax); //lenny
+#else
+	sc->nr_to_reclaim += max(high_wmark_pages(zone), SWAP_CLUSTER_MAX);
+#endif
+//MSCHANGE end
 	}
 
 	/*
@@ -4079,6 +4109,14 @@ void wakeup_kswapd(struct zone *zone, gfp_t gfp_flags, int order,
 		return;
 
 	pgdat = zone->zone_pgdat;
+//MSCHANGE begin
+#ifdef KSWAPD_TUNE
+	if (lenny_get_sum()>T2)  //lenny_fast1
+		WRITE_ONCE(pgdat->kswapd_order, lenny_get_accuracy()+2);
+	else if (lenny_get_sum()>0)
+		WRITE_ONCE(pgdat->kswapd_order, lenny_get_accuracy()+1);
+#endif	
+//MSCHANGE end
 	curr_idx = READ_ONCE(pgdat->kswapd_classzone_idx);
 
 	if (curr_idx == MAX_NR_ZONES || curr_idx < classzone_idx)
